@@ -1,12 +1,12 @@
-/* 
+/*
   you need masriadb-connector-c and libevent to compile this example:
- 
+
   gcc -std=gnu11 -o async test1.c msa.c -lmariadb -luv
 
 	 -I"/usr/local/include/mariadb/"
 	 -L"/usr/local/lib/mariadb"
 
- */ 
+ */
 
 #include <assert.h>
 #include "msa.h"
@@ -29,7 +29,7 @@ typedef struct test_context {
 	msa_pool_t pool;
 	msa_connection_details_t opts;
 	msa_query_t drop_query, create_query, *insert_queries, *select_queries;
-	
+
 	uv_timer_t closing_timer;
 	int nr_after_query_cb_calls;
 	int nr_failed_conns;
@@ -116,7 +116,7 @@ static void test1_after_query_cb(msa_query_t *query, int status, int mysql_statu
 			ASSERT(0);
 			break;
 	}
-	
+
 	ASSERT_ZERO(status);
 	ASSERT_ZERO(mysql_status);
 }

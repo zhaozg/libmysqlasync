@@ -2,7 +2,20 @@ cmake_minimum_required(VERSION 2.8)
 
 project(libmysqlasync C)
 
+set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/")
+find_package(MySQL)
+IF (NOT ${MARIADB_FOUND})
+  message(FATAL_ERROR "Not found any mysqlclient")
+ENDIF()
+find_package(Libuv)
+IF (NOT ${LIBUV_FOUND})
+  message(FATAL_ERROR "Not foud any libuv")
+ENDIF()
+
+include_directories("${MARIADB_INCLUDE_DIR}")
+include_directories("${LIBUV_INCLUDE_DIR}")
 include_directories("${PROJECT_SOURCE_DIR}/include")
+link_directories(${CMAKE_SOURCE_DIR}/lib)
 
 file(GLOB LIB_SOURCES "src/*.c")
 

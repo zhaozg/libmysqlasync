@@ -1,12 +1,12 @@
-/* 
+/*
   you need masriadb-connector-c and libevent to compile this example:
- 
+
   gcc -std=gnu11 -c msa.c -I"/usr/include/mysql"
 
 	 test:
 	 https://ideone.com/5w8uCu
 
- */ 
+ */
 
 /**
 	Questions:
@@ -25,11 +25,11 @@ struct msa_connection_s {
   msa_pool_t* pool;
   int current_state;                   // State machine current state
 
-  MYSQL mysql;                        
+  MYSQL mysql;
   MYSQL *ret;
   MYSQL_RES *result;
   MYSQL_ROW row;
-  
+
   uv_timeout_poll_t timeout_poll_handle;
 
   msa_query_t *current_query_entry;
@@ -90,7 +90,7 @@ enum msa_conn_open_reason {
 
 static void __msa_connection_state_machine_handler(uv_timeout_poll_t* handle, int status, int event);
 static inline int add_event(int status, msa_connection_t *conn);
-static inline int decide_next_state(int op_status, msa_connection_t* conn, 
+static inline int decide_next_state(int op_status, msa_connection_t* conn,
     int state_wait, int state_go_on);
 static inline int mysql_status(int stat, int event);
 static inline int init_poll_handle(msa_connection_t* conn);
@@ -136,7 +136,7 @@ static inline int add_event(int status, msa_connection_t *conn) {
 	uv_fileno((uv_handle_t*)(&conn->timeout_poll_handle.poll), &ofd);
 	assert(mysql_get_socket(&conn->mysql) == ofd);
 #endif // NDEBUG
-	
+
   if (status & MYSQL_WAIT_TIMEOUT) {
   	timeout = mysql_get_timeout_value_ms(&conn->mysql);
   }
@@ -148,14 +148,14 @@ static inline int add_event(int status, msa_connection_t *conn) {
 
 // op_status  : return value of a db operation
 // state_wait : one of ( CONNECT_WAITING, QUERY_WAITING, FETCH_ROW_WAITING, QUERY_FREE_RESULT_WAITING, CLOSE_WAITING)
-static inline int decide_next_state(int op_status, msa_connection_t* conn, 
-    int state_wait, int state_go_on){ 
-  if (op_status){  
+static inline int decide_next_state(int op_status, msa_connection_t* conn,
+    int state_wait, int state_go_on){
+  if (op_status){
     // need to wait for data(add event to libevent)
     conn->current_state = state_wait;
-    add_event(op_status, conn);   
+    add_event(op_status, conn);
     return 0;
-  } else {        
+  } else {
     // no need to wait, go to next state immediately
     conn->current_state = state_go_on;
     return 1;
@@ -213,7 +213,7 @@ static void __msa_connection_state_machine_handler(uv_timeout_poll_t* handle, in
         The first param is the real output parameter of the method (passed as pointer).
       */
 
-      case CONNECT_START:   
+      case CONNECT_START:
         /**
           We use `CLIENT_REMEMBER_OPTIONS` flag in order to avoid segfault on failure.
             (bug on mariadb - it doubly free mysql_options())
@@ -221,7 +221,7 @@ static void __msa_connection_state_machine_handler(uv_timeout_poll_t* handle, in
           When a connection fails to establish we free it and might attemp connecting again.
             also a message is delivered to user via error_cb().
         **/
-        status = mysql_real_connect_start(&conn->ret, &conn->mysql, conn->pool->opts->host, 
+        status = mysql_real_connect_start(&conn->ret, &conn->mysql, conn->pool->opts->host,
         	conn->pool->opts->user, conn->pool->opts->password, conn->pool->opts->db, 0, NULL, CLIENT_REMEMBER_OPTIONS);
         if (status == 0 && !conn->ret) {
           conn->pool->nr_successive_connection_fails++;
@@ -235,15 +235,15 @@ static void __msa_connection_state_machine_handler(uv_timeout_poll_t* handle, in
           return;
         }
         init_poll_handle(conn);  // TODO: handle return errors
-        state_machine_continue = decide_next_state(status, conn, CONNECT_WAITING, CONNECT_DONE);   
+        state_machine_continue = decide_next_state(status, conn, CONNECT_WAITING, CONNECT_DONE);
         break;
 
-      case CONNECT_WAITING: 
+      case CONNECT_WAITING:
         status = mysql_real_connect_cont(&conn->ret, &conn->mysql, mysql_status(status, event));
-        state_machine_continue = decide_next_state(status, conn, CONNECT_WAITING, CONNECT_DONE);   
+        state_machine_continue = decide_next_state(status, conn, CONNECT_WAITING, CONNECT_DONE);
         break;
 
-      case CONNECT_DONE: 
+      case CONNECT_DONE:
         assert(conn->current_query_entry == NULL);
 
         if (!conn->ret) {
@@ -260,13 +260,13 @@ static void __msa_connection_state_machine_handler(uv_timeout_poll_t* handle, in
           __msa_pool_del_closed_connection(conn);
 
           // TODO: try create new conn if needed & not exceeded max num of successive conn create failure (conn->pool->nr_successive_connection_fails < conn->pool->opts->max_nr_successive_connection_fails).
-          //       conn->pool->opts->error_cb(conn->pool, MSA_EEXCEED_FAIL_CONN_ATTEMPTS_LIMIT, mysql_errno(&conn->mysql)); 
+          //       conn->pool->opts->error_cb(conn->pool, MSA_EEXCEED_FAIL_CONN_ATTEMPTS_LIMIT, mysql_errno(&conn->mysql));
           //       maybe we should relate to create_reason.
           return;
         }
         assert(conn->ret == &conn->mysql);
         conn->pool->nr_successive_connection_fails = 0;
-        conn->current_state = QUERY_START; 
+        conn->current_state = QUERY_START;
 
         // make conn active.
         assert(!__msa_conn_is_active(conn));
@@ -278,7 +278,7 @@ static void __msa_connection_state_machine_handler(uv_timeout_poll_t* handle, in
 
         break;
 
-      case QUERY_START: 
+      case QUERY_START:
         assert(conn->current_query_entry == NULL);
 
         if (conn->closing) {
@@ -290,7 +290,7 @@ static void __msa_connection_state_machine_handler(uv_timeout_poll_t* handle, in
         }
 
       	// TODO: lock query_list.
-        if (msa_list_empty(&conn->pool->pending_queries_list_head)) {  
+        if (msa_list_empty(&conn->pool->pending_queries_list_head)) {
         	// add this conn to pool free connections. it will be used again when new queries will arrive.
           /*conn->current_query_entry = NULL;*/
         	msa_list_add_tail(&conn->free_conns_list, &conn->pool->free_conns_list_head);
@@ -313,12 +313,12 @@ static void __msa_connection_state_machine_handler(uv_timeout_poll_t* handle, in
 
         status = mysql_real_query_start(&conn->err, &conn->mysql, conn->current_query_entry->query,
             strlen(conn->current_query_entry->query));
-        state_machine_continue = decide_next_state(status, conn, QUERY_WAITING, QUERY_RESULT_READY);   
+        state_machine_continue = decide_next_state(status, conn, QUERY_WAITING, QUERY_RESULT_READY);
         break;
 
       case QUERY_WAITING:
         status = mysql_real_query_cont(&conn->err, &conn->mysql, mysql_status(status, event));
-        state_machine_continue = decide_next_state(status, conn, QUERY_WAITING, QUERY_RESULT_READY);   
+        state_machine_continue = decide_next_state(status, conn, QUERY_WAITING, QUERY_RESULT_READY);
         break;
 
       case QUERY_RESULT_READY:
@@ -328,7 +328,7 @@ static void __msa_connection_state_machine_handler(uv_timeout_poll_t* handle, in
             __msa_connection_del_current_query(conn);
             prev_query->after_query_cb(prev_query, MSA_EQUERYSTOP, mysql_errno(&conn->mysql));
 
-            /* 
+            /*
               We cannot procceed to new SRART_QUERY now.
               We must first free the current result if exists ( https://mariadb.com/kb/en/mariadb/mysql_use_result/ )
               TODO: ensure that when an error occours we do not have to free result.
@@ -378,16 +378,16 @@ static void __msa_connection_state_machine_handler(uv_timeout_poll_t* handle, in
 
       case FETCH_ROW_START:
         status = mysql_fetch_row_start(&conn->row, conn->result);
-        state_machine_continue = decide_next_state(status, conn, 
-            FETCH_ROW_WAITING, FETCH_ROW_RESULT_READY);   
+        state_machine_continue = decide_next_state(status, conn,
+            FETCH_ROW_WAITING, FETCH_ROW_RESULT_READY);
         break;
 
       case FETCH_ROW_WAITING:
         status = mysql_fetch_row_cont(&conn->row, conn->result, mysql_status(status, event));
-        state_machine_continue = decide_next_state(status, conn, FETCH_ROW_WAITING, FETCH_ROW_RESULT_READY);   
+        state_machine_continue = decide_next_state(status, conn, FETCH_ROW_WAITING, FETCH_ROW_RESULT_READY);
         break;
 
-      case FETCH_ROW_RESULT_READY: 
+      case FETCH_ROW_RESULT_READY:
         if (conn->current_query_entry->stopping > 0) {
             prev_query = conn->current_query_entry;
             __msa_connection_del_current_query(conn);
@@ -406,11 +406,11 @@ static void __msa_connection_state_machine_handler(uv_timeout_poll_t* handle, in
             /* EOF - no more rows */
             prev_query->after_query_cb(prev_query, /*TODO: use right status */0, 0);
           }
-          
-          conn->current_state = QUERY_FREE_RESULT_START; 
+
+          conn->current_state = QUERY_FREE_RESULT_START;
           break;
         }
-        
+
 		    conn->current_query_entry->res_ready_cb(conn->current_query_entry, conn->result, conn->row);
 
         // print fields in the row
@@ -426,13 +426,13 @@ static void __msa_connection_state_machine_handler(uv_timeout_poll_t* handle, in
       case QUERY_FREE_RESULT_START:
         assert(conn->result != NULL);
         status = mysql_free_result_start(conn->result);
-        state_machine_continue = decide_next_state(status, conn, QUERY_FREE_RESULT_WAITING, QUERY_FREE_RESULT_DONE);   
+        state_machine_continue = decide_next_state(status, conn, QUERY_FREE_RESULT_WAITING, QUERY_FREE_RESULT_DONE);
         break;
 
       case QUERY_FREE_RESULT_WAITING:
         assert(conn->result != NULL);
         status = mysql_free_result_cont(conn->result, mysql_status(status, event));
-        state_machine_continue = decide_next_state(status, conn, QUERY_FREE_RESULT_WAITING, QUERY_FREE_RESULT_DONE);   
+        state_machine_continue = decide_next_state(status, conn, QUERY_FREE_RESULT_WAITING, QUERY_FREE_RESULT_DONE);
         break;
 
       case QUERY_FREE_RESULT_DONE:
@@ -457,17 +457,17 @@ static void __msa_connection_state_machine_handler(uv_timeout_poll_t* handle, in
         // TODO: check the number of active conns is ok.
 
         status = mysql_close_start(&conn->mysql);
-        state_machine_continue = decide_next_state(status, conn, CLOSE_WAITING, CLOSE_DONE);   
+        state_machine_continue = decide_next_state(status, conn, CLOSE_WAITING, CLOSE_DONE);
         break;
 
-      case CLOSE_WAITING: 
+      case CLOSE_WAITING:
         status = mysql_close_cont(&conn->mysql, mysql_status(status, event));
-        state_machine_continue = decide_next_state(status, conn, CLOSE_WAITING, CLOSE_DONE);   
+        state_machine_continue = decide_next_state(status, conn, CLOSE_WAITING, CLOSE_DONE);
         break;
 
       case CLOSE_DONE:
         __msa_pool_del_closed_connection(conn);
-        state_machine_continue = 0;   
+        state_machine_continue = 0;
         break;
 
       default:
@@ -487,7 +487,7 @@ int msa_pool_init(msa_pool_t *pool, msa_connection_details_t* opts, uv_loop_t *l
   pool->loop = loop;
 
   opts->timeout = (opts->timeout > 0 ? opts->timeout : DEFAULT_TIMEOUT);
-  opts->max_nr_successive_connection_fails = (opts->max_nr_successive_connection_fails > 0 
+  opts->max_nr_successive_connection_fails = (opts->max_nr_successive_connection_fails > 0
       ? opts->max_nr_successive_connection_fails : DEFAULT_MAX_NR_SUCCESSIVE_CONNECTION_FAILS);
 
   MSA_INIT_LIST_HEAD(&pool->pending_queries_list_head);  // waiting for connections to be freed.
@@ -713,7 +713,7 @@ static int __msa_connection_init(msa_connection_t *conn, msa_pool_t *pool, int o
   conn->err = 0;
   conn->is_active = 0;
   conn->closing = 0;
-  
+
   msa_list_add_tail(&conn->conns_list, &pool->nonactive_conns_list_head);
   pool->nr_nonactive_conns++;
 
@@ -725,7 +725,7 @@ static int __msa_connection_init(msa_connection_t *conn, msa_pool_t *pool, int o
   mysql_options(&conn->mysql, MYSQL_OPT_NONBLOCK, NULL);
   mysql_options(&conn->mysql, MYSQL_READ_DEFAULT_GROUP, "async_queries");
 
-  // set timeouts to 300 microseconds 
+  // set timeouts to 300 microseconds
   timeout = pool->opts->timeout;
   mysql_options(&conn->mysql, MYSQL_OPT_READ_TIMEOUT, &timeout);
   mysql_options(&conn->mysql, MYSQL_OPT_CONNECT_TIMEOUT, &timeout);
@@ -743,7 +743,7 @@ static int __msa_connection_del_current_query(msa_connection_t *conn) {
   msa_list_del(&conn->current_query_entry->query_list);
   MSA_INIT_LIST_HEAD(&conn->current_query_entry->query_list);
   conn->current_query_entry = NULL;
-  
+
   return 0;
 }
 
@@ -881,6 +881,6 @@ static inline int __msa_pending_query_stop(msa_query_t *query) {
 
     // call the after_cb of the query.
     query->after_query_cb(query, MSA_EQUERYSTOP, 0);
-    
+
     return 0;
 }
